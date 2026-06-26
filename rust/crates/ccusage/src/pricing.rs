@@ -796,6 +796,52 @@ impl PricingMap {
                 fast_multiplier: 1.0,
             },
         );
+        // Source: Cursor Composer pricing (Composer 2.5 / Composer 2.5 Fast pool).
+        let composer_25 = Pricing {
+            input: 0.5e-6,
+            output: 2.5e-6,
+            cache_create: 0.0,
+            cache_read: 0.2e-6,
+            cache_read_explicit: true,
+            input_above_200k: None,
+            output_above_200k: None,
+            cache_create_above_200k: None,
+            cache_read_above_200k: None,
+            fast_multiplier: 1.0,
+        };
+        self.entries
+            .insert("grok-composer-2.5".to_string(), composer_25);
+        self.entries.insert(
+            "grok-composer-2.5-fast".to_string(),
+            Pricing {
+                input: 3e-6,
+                output: 15e-6,
+                cache_create: 0.0,
+                cache_read: 0.5e-6,
+                cache_read_explicit: true,
+                input_above_200k: None,
+                output_above_200k: None,
+                cache_create_above_200k: None,
+                cache_read_above_200k: None,
+                fast_multiplier: 1.0,
+            },
+        );
+        // Source: https://docs.x.ai/developers/pricing (Grok 4.3 coding rates).
+        self.entries.insert(
+            "grok-build".to_string(),
+            Pricing {
+                input: 1.25e-6,
+                output: 2.5e-6,
+                cache_create: 1.25e-6,
+                cache_read: 0.125e-6,
+                cache_read_explicit: false,
+                input_above_200k: None,
+                output_above_200k: None,
+                cache_create_above_200k: None,
+                cache_read_above_200k: None,
+                fast_multiplier: 1.0,
+            },
+        );
         // Source: https://platform.kimi.ai/docs/pricing/chat-k25
         self.entries.insert(
             "moonshot/kimi-k2.5".to_string(),
@@ -985,6 +1031,12 @@ impl PricingMap {
         self.context_limits.insert("gpt-5.5".to_string(), 1_050_000);
         self.context_limits
             .insert("grok-4.3".to_string(), 1_000_000);
+        self.context_limits
+            .insert("grok-composer-2.5".to_string(), 200_000);
+        self.context_limits
+            .insert("grok-composer-2.5-fast".to_string(), 200_000);
+        self.context_limits
+            .insert("grok-build".to_string(), 512_000);
         self.context_limits.insert("gpt-5.4".to_string(), 1_050_000);
         for model in [
             "claude-opus-4-8",
@@ -1276,6 +1328,34 @@ mod tests {
         assert!(pricing.find("gpt-5.5").is_some());
         assert!(pricing.find("grok-4.3").is_some());
         assert_eq!(pricing.context_limit("grok-4.3"), Some(1_000_000));
+    }
+
+    #[test]
+    fn embedded_pricing_includes_cursor_composer_models_for_offline_grok_reports() {
+        let pricing = PricingMap::load_embedded();
+        let composer = pricing.find("grok-composer-2.5").unwrap();
+        let composer_fast = pricing.find("grok-composer-2.5-fast").unwrap();
+
+        assert_eq!(composer.input, 0.5e-6);
+        assert_eq!(composer.output, 2.5e-6);
+        assert_eq!(composer.cache_read, 0.2e-6);
+        assert_eq!(composer.cache_create, 0.0);
+        assert!(composer.cache_read_explicit);
+        assert_eq!(composer_fast.input, 3e-6);
+        assert_eq!(composer_fast.output, 15e-6);
+        assert_eq!(composer_fast.cache_read, 0.5e-6);
+        assert_eq!(composer_fast.cache_create, 0.0);
+        assert!(composer_fast.cache_read_explicit);
+        assert_eq!(
+            pricing.context_limit("grok-composer-2.5-fast"),
+            Some(200_000)
+        );
+        assert!(pricing.find("xai/grok-composer-2.5-fast").is_some());
+
+        let grok_build = pricing.find("grok-build").unwrap();
+        assert_eq!(grok_build.input, 1.25e-6);
+        assert_eq!(grok_build.output, 2.5e-6);
+        assert_eq!(pricing.context_limit("grok-build"), Some(512_000));
     }
 
     #[test]
