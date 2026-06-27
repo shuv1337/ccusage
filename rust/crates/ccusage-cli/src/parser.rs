@@ -298,7 +298,7 @@ fn parse_all_command(
 fn parse_top_level_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
-    _config: &dyn CliConfig,
+    config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
     while parser.peek().is_some() {
@@ -319,13 +319,17 @@ fn parse_top_level_session_command(
         return Ok(Command::Session(args));
     }
 
+    let mut grok_home = None;
+    let mut codex_speed = CodexSpeed::Auto;
+    config.apply_agent_args(&mut codex_speed, None, None, Some(&mut grok_home));
+
     Ok(Command::All(AgentCommandArgs {
         shared: args.shared,
         kind: AgentReportKind::Session,
         pi_path: None,
         open_claw_path: None,
-        grok_home: None,
-        codex_speed: CodexSpeed::Auto,
+        grok_home,
+        codex_speed,
     }))
 }
 

@@ -983,6 +983,20 @@ fn grok_home_cli_beats_config_defaults() {
 }
 
 #[test]
+fn root_session_applies_grok_home_from_config() {
+    let config = TestConfig {
+        grok_home: Some("/tmp/config-grok"),
+        ..TestConfig::default()
+    };
+    let cli = parse_with_config(&["ccusage", "session", "--json"], &config);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Session);
+    assert_eq!(args.grok_home.as_deref(), Some("/tmp/config-grok"));
+}
+
+#[test]
 fn grok_blocks_and_statusline_report_unsupported() {
     let blocks = parse_error(&["ccusage", "grok", "blocks"]);
     assert!(blocks.contains("only available for Claude Code"));
