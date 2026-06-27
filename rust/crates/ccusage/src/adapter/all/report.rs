@@ -462,6 +462,7 @@ fn agent_label(agent: &str) -> &str {
         "copilot" => "GitHub Copilot CLI",
         "gemini" => "Gemini CLI",
         "kimi" => "Kimi",
+        "grok" => "Grok",
         "qwen" => "Qwen",
         _ => agent,
     }

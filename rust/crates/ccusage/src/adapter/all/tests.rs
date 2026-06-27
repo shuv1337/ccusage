@@ -609,3 +609,57 @@ fn full_table_columns_include_cache_and_total_token_metrics() {
     );
     assert_eq!(headers.len(), aligns.len());
 }
+
+#[test]
+fn load_rows_detects_grok_from_env_home() {
+    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    let fixture = fs_fixture!({
+        "logs/unified.jsonl": r#"{"ts":"2026-06-26T10:00:00.000Z","src":"shell","sid":"019f0000-0000-7000-8000-000000000001","msg":"shell.turn.inference_done","ctx":{"loop_index":1,"prompt_tokens":100,"cached_prompt_tokens":0,"completion_tokens":20,"reasoning_tokens":0}}"#,
+        "sessions/%2Ftmp%2Fproject/019f0000-0000-7000-8000-000000000001/summary.json": r#"{"info":{"id":"019f0000-0000-7000-8000-000000000001","cwd":"/tmp/project"},"current_model_id":"grok-composer-2.5-fast"}"#,
+    });
+    let _env = EnvVarGuard::set("GROK_HOME", fixture.root());
+    let shared = crate::cli::SharedArgs {
+        json: true,
+        ..crate::cli::SharedArgs::default()
+    };
+
+    let result = super::loader::load_rows(AgentReportKind::Daily, &shared, None).unwrap();
+
+    assert!(result.detected_agents.contains(&"grok"));
+    assert!(result.rows.iter().any(|row| {
+        row.agent_breakdowns
+            .as_ref()
+            .is_some_and(|breakdowns| breakdowns.iter().any(|breakdown| breakdown.agent == "grok"))
+    }));
+}
+
+#[test]
+fn load_rows_detects_grok_from_config_home_override() {
+    use ccusage_test_support::fs_fixture;
+
+    let fixture = fs_fixture!({
+        "logs/unified.jsonl": r#"{"ts":"2026-06-26T10:00:00.000Z","src":"shell","sid":"019f0000-0000-7000-8000-000000000001","msg":"shell.turn.inference_done","ctx":{"loop_index":1,"prompt_tokens":100,"cached_prompt_tokens":0,"completion_tokens":20,"reasoning_tokens":0}}"#,
+        "sessions/%2Ftmp%2Fproject/019f0000-0000-7000-8000-000000000001/summary.json": r#"{"info":{"id":"019f0000-0000-7000-8000-000000000001","cwd":"/tmp/project"},"current_model_id":"grok-composer-2.5-fast"}"#,
+    });
+    let shared = crate::cli::SharedArgs {
+        json: true,
+        ..crate::cli::SharedArgs::default()
+    };
+
+    let result = super::loader::load_rows(
+        AgentReportKind::Daily,
+        &shared,
+        Some(fixture.root().to_str().unwrap()),
+    )
+    .unwrap();
+
+    assert!(result.detected_agents.contains(&"grok"));
+    assert!(result.rows.iter().any(|row| {
+        row.agent_breakdowns.as_ref().is_some_and(|breakdowns| {
+            breakdowns
+                .iter()
+                .any(|breakdown| breakdown.agent == "grok" && breakdown.total_tokens > 0)
+        })
+    }));
+}
