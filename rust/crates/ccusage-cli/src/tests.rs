@@ -43,6 +43,7 @@ struct TestConfig {
     codex_speed: Option<CodexSpeed>,
     pi_path: Option<&'static str>,
     open_claw_path: Option<&'static str>,
+    grok_home: Option<&'static str>,
 }
 
 impl CliConfig for TestConfig {
@@ -99,6 +100,7 @@ impl CliConfig for TestConfig {
         codex_speed: &mut CodexSpeed,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
+        grok_home: Option<&mut Option<String>>,
     ) {
         if let Some(speed) = self.codex_speed {
             *codex_speed = speed;
@@ -108,6 +110,9 @@ impl CliConfig for TestConfig {
         }
         if let (Some(path), Some(open_claw_path)) = (self.open_claw_path, open_claw_path) {
             *open_claw_path = Some(path.to_string());
+        }
+        if let (Some(path), Some(grok_home)) = (self.grok_home, grok_home) {
+            *grok_home = Some(path.to_string());
         }
     }
 }
@@ -200,6 +205,7 @@ fn command_snapshot(command: Option<Command>) -> Value {
         Some(Command::Copilot(args)) => agent_command_snapshot("copilot", args),
         Some(Command::Gemini(args)) => agent_command_snapshot("gemini", args),
         Some(Command::Kimi(args)) => agent_command_snapshot("kimi", args),
+        Some(Command::Grok(args)) => agent_command_snapshot("grok", args),
         Some(Command::Qwen(args)) => agent_command_snapshot("qwen", args),
         Some(Command::OpenClaw(args)) => agent_command_snapshot("openclaw", args),
     }
@@ -212,6 +218,7 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
         "kind": format!("{:?}", args.kind),
         "piPath": args.pi_path,
         "openClawPath": args.open_claw_path,
+        "grokHome": args.grok_home,
         "codexSpeed": format!("{:?}", args.codex_speed),
     })
 }
@@ -358,7 +365,7 @@ fn root_help_lists_agent_namespaces_without_nested_commands() {
     let help = help_text();
     let agents = [
         "claude", "codex", "opencode", "amp", "droid", "codebuff", "hermes", "pi", "goose", "kilo",
-        "copilot", "gemini", "kimi", "qwen", "openclaw",
+        "copilot", "gemini", "kimi", "grok", "qwen", "openclaw",
     ];
 
     for agent in agents {
@@ -557,6 +564,17 @@ fn snapshots_representative_cli_parse_shapes() {
                 "openclaw",
                 "session",
                 "--open-claw-path=/tmp/openclaw",
+            ])),
+        }),
+        json!({
+            "case": "grok daily path",
+            "cli": cli_snapshot(parse(&[
+                "ccusage",
+                "grok",
+                "daily",
+                "--grok-home",
+                "/tmp/grok",
+                "--json",
             ])),
         }),
         json!({
@@ -928,6 +946,61 @@ fn parses_kimi_session_options() {
     };
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
+}
+
+#[test]
+fn parses_grok_daily_options() {
+    let cli = parse(&[
+        "ccusage",
+        "grok",
+        "daily",
+        "--grok-home",
+        "/tmp/grok",
+        "--json",
+    ]);
+    let Some(Command::Grok(args)) = cli.command else {
+        panic!("expected grok command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Daily);
+    assert!(args.shared.json);
+    assert_eq!(args.grok_home.as_deref(), Some("/tmp/grok"));
+}
+
+#[test]
+fn grok_home_cli_beats_config_defaults() {
+    let config = TestConfig {
+        grok_home: Some("/tmp/config-grok"),
+        ..TestConfig::default()
+    };
+    let cli = parse_with_config(
+        &["ccusage", "grok", "daily", "--grok-home", "/tmp/cli-grok"],
+        &config,
+    );
+    let Some(Command::Grok(args)) = cli.command else {
+        panic!("expected grok command");
+    };
+    assert_eq!(args.grok_home.as_deref(), Some("/tmp/cli-grok"));
+}
+
+#[test]
+fn grok_blocks_and_statusline_report_unsupported() {
+    let blocks = parse_error(&["ccusage", "grok", "blocks"]);
+    assert!(blocks.contains("only available for Claude Code"));
+    let statusline = parse_error(&["ccusage", "grok", "statusline"]);
+    assert!(statusline.contains("only available for Claude Code"));
+}
+
+#[test]
+fn command_tokens_skip_grok_home_value() {
+    let tokens = crate::parser::command_tokens(&[
+        "ccusage".to_string(),
+        "grok".to_string(),
+        "daily".to_string(),
+        "--grok-home".to_string(),
+        "/tmp/grok".to_string(),
+        "--json".to_string(),
+    ]);
+    assert_eq!(tokens, vec!["ccusage", "grok", "daily"]);
 }
 
 #[test]
