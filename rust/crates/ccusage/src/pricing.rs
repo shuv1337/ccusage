@@ -834,7 +834,7 @@ impl PricingMap {
                 output: 2.5e-6,
                 cache_create: 1.25e-6,
                 cache_read: 0.125e-6,
-                cache_read_explicit: false,
+                cache_read_explicit: true,
                 input_above_200k: None,
                 output_above_200k: None,
                 cache_create_above_200k: None,
@@ -1355,6 +1355,7 @@ mod tests {
         let grok_build = pricing.find("grok-build").unwrap();
         assert_eq!(grok_build.input, 1.25e-6);
         assert_eq!(grok_build.output, 2.5e-6);
+        assert!(grok_build.cache_read_explicit);
         assert_eq!(pricing.context_limit("grok-build"), Some(512_000));
     }
 
