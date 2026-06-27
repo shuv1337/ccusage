@@ -145,6 +145,7 @@ fn main() -> Result<()> {
         Some(Command::Copilot(args)) => adapter::copilot::run(args),
         Some(Command::Gemini(args)) => adapter::gemini::run(args),
         Some(Command::Kimi(args)) => adapter::kimi::run(args),
+        Some(Command::Grok(args)) => adapter::grok::run(args),
         Some(Command::OpenClaw(args)) => adapter::openclaw::run(args),
         None => {
             let args = AgentCommandArgs {
@@ -152,6 +153,7 @@ fn main() -> Result<()> {
                 kind: AgentReportKind::Daily,
                 pi_path: None,
                 open_claw_path: None,
+                grok_home: None,
                 codex_speed: cli::CodexSpeed::Auto,
             };
             adapter::all::run(args)
