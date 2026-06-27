@@ -25,7 +25,7 @@ ccusage daily --all
 
 ## How Unified Views Work
 
-ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, and Gemini CLI. The same daily, weekly, monthly, and session views can run in two modes:
+ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Grok, Qwen, GitHub Copilot CLI, and Gemini CLI. The same daily, weekly, monthly, and session views can run in two modes:
 
 | Mode    | Command example        | What it shows                           |
 | ------- | ---------------------- | --------------------------------------- |
@@ -34,6 +34,12 @@ ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid,
 | Focused | `ccusage claude daily` | One source with source-specific options |
 
 Unified tables include an **Agent** column so you can compare sources in one view. Focused views remove that comparison layer and show the selected source in more detail where applicable.
+
+### Cost mode in unified reports
+
+`ccusage daily --mode display` uses precomputed `costUSD` when a source stores it locally (for example Claude Code). Sources without local recorded cost—including **Grok**, Kimi, and Gemini CLI—still appear with token totals but show **$0.00** cost in unified Display mode.
+
+For Grok cost estimates in unified reports, use `--mode auto` or `--mode calculate`. Focused `ccusage grok *` commands reject `--mode display` because Grok has no local `costUSD` to show.
 
 ## Supported Sources
 
@@ -51,6 +57,7 @@ Unified tables include an **Agent** column so you can compare sources in one vie
 | OpenClaw     | `openclaw` | `ccusage openclaw daily`  |
 | Kilo         | `kilo`     | `ccusage kilo daily`      |
 | Kimi         | `kimi`     | `ccusage kimi daily`      |
+| Grok         | `grok`     | `ccusage grok daily`      |
 | Qwen         | `qwen`     | `ccusage qwen daily`      |
 | Copilot CLI  | `copilot`  | `ccusage copilot daily`   |
 | Gemini CLI   | `gemini`   | `ccusage gemini daily`    |
