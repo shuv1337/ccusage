@@ -70,7 +70,6 @@ pub(super) struct GrokUsageEntry {
     pub(super) timestamp: TimestampMs,
     pub(super) timestamp_text: String,
     pub(super) session_id: String,
-    #[allow(dead_code)]
     pub(super) project: String,
     pub(super) model: String,
     pub(super) usage: TokenUsageRaw,
@@ -189,7 +188,6 @@ fn ctx_has_required_token_fields(ctx: &InferenceCtx) -> bool {
         && ctx.prompt_tokens.is_some()
         && ctx.cached_prompt_tokens.is_some()
         && ctx.completion_tokens.is_some()
-        && ctx.reasoning_tokens.is_some()
 }
 
 fn map_token_usage(ctx: &InferenceCtx) -> TokenUsageRaw {
@@ -259,7 +257,7 @@ pub(super) fn grok_entry_to_loaded(
         timestamp: entry.timestamp,
         project: Arc::from("grok"),
         session_id: Arc::from(entry.session_id),
-        project_path: Arc::from("Grok"),
+        project_path: Arc::from(entry.project.as_str()),
         cost,
         extra_total_tokens: entry.reasoning_tokens,
         credits: None,
@@ -503,5 +501,42 @@ mod tests {
         let entries =
             parse_unified_log(&fixture.path("logs/unified.jsonl"), &HashMap::new()).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn accepts_inference_done_without_reasoning_tokens_field() {
+        let fixture = fs_fixture!({
+            "logs/unified.jsonl": r#"{"ts":"2026-06-26T10:00:00.000Z","src":"shell","sid":"019f0000-0000-7000-8000-000000000001","msg":"shell.turn.inference_done","ctx":{"loop_index":1,"prompt_tokens":10,"cached_prompt_tokens":0,"completion_tokens":5}}"#,
+        });
+        let entries =
+            parse_unified_log(&fixture.path("logs/unified.jsonl"), &HashMap::new()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].reasoning_tokens, 0);
+    }
+
+    #[test]
+    fn grok_entry_to_loaded_surfaces_session_cwd_as_project_path() {
+        let pricing = PricingMap::load_embedded();
+        let entry = GrokUsageEntry {
+            timestamp: parse_ts_timestamp("2026-06-26T10:00:00.000Z").unwrap(),
+            timestamp_text: "2026-06-26T10:00:00.000Z".to_string(),
+            session_id: SID_A.to_string(),
+            project: "/tmp/project".to_string(),
+            model: "grok-composer-2.5-fast".to_string(),
+            usage: TokenUsageRaw {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                speed: None,
+                cache_creation: None,
+            },
+            reasoning_tokens: 0,
+            entry_id: format!("grok:{SID_A}:2026-06-26T10:00:00.000Z:1"),
+        };
+
+        let loaded = grok_entry_to_loaded(entry, None, CostMode::Calculate, &pricing);
+
+        assert_eq!(loaded.project_path.as_ref(), "/tmp/project");
     }
 }
