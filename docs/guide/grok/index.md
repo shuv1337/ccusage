@@ -80,7 +80,7 @@ token counts and LiteLLM pricing. Use `--mode auto` or `--mode calculate`.
 
 | Variable    | Description                                          |
 | ----------- | ---------------------------------------------------- |
-| `GROK_HOME` | Override the Grok data directory (default `~/.grok`) |
+| `GROK_HOME` | Override the Grok data directory (default `~/.grok`; single path only) |
 
 ## Troubleshooting
 

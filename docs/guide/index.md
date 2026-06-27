@@ -92,7 +92,7 @@ ccusage reads from local coding CLI data directories:
 | Gemini CLI   | `gemini`   | `${GEMINI_DATA_DIR:-~/.gemini/tmp}`             |
 
 The tool automatically detects available data and aggregates all supported coding CLIs by default.
-Each source-specific environment variable can also contain comma-separated directories, which lets unified reports combine current profiles and archives.
+Most source-specific environment variables can also contain comma-separated directories, which lets unified reports combine current profiles and archives. `GROK_HOME` accepts a single directory path.
 
 Some coding agents have been investigated but are not supported because their local files do not contain reliable token usage. See [Source Support Q&A](/guide/source-support-qa) for the current notes on Antigravity CLI and Devin CLI.
 
