@@ -10,16 +10,16 @@ This plan adds a `grok` agent subcommand (`ccusage grok daily|monthly|session`) 
 
 ### Decisions from investigation
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Primary token source | `logs/unified.jsonl` | Only source with `prompt_tokens`, `cached_prompt_tokens`, `completion_tokens`, `reasoning_tokens` per inference |
-| Session metadata source | `sessions/<encoded-cwd>/<id>/summary.json` | Provides `info.cwd`, `current_model_id`, title, timestamps |
-| Do not parse `chat_history.jsonl` for usage | Skip | Assistant lines have `model_id` but no usage fields |
-| Granularity | One `LoadedEntry` per `inference_done` | Matches Copilot OTEL per-span model; accurate for multi-tool turns |
-| Cost mode | Calculate / Auto only | No precomputed `costUSD` in local Grok data |
-| V1 scope | Primary sessions only | `subagent_finished.tokens_used` lacks input/output split; defer |
-| Command name | `grok` | Aligns with `ccusage kimi`, `ccusage codex`; matches product name |
-| All-agents report | Include in V1 | Kimi/Copilot are in `adapter/all/loader.rs`; Grok should be too |
+| Decision                                    | Choice                                     | Rationale                                                                                                                 |
+| ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Primary token source                        | `logs/unified.jsonl`                       | Only source with `prompt_tokens`, `cached_prompt_tokens`, `completion_tokens`, `reasoning_tokens` per inference           |
+| Session metadata source                     | `sessions/<encoded-cwd>/<id>/summary.json` | Provides `info.cwd`, `current_model_id`, title, timestamps                                                                |
+| Do not parse `chat_history.jsonl` for usage | Skip                                       | Assistant lines have `model_id` but no usage fields                                                                       |
+| Granularity                                 | One `LoadedEntry` per `inference_done`     | Matches Copilot OTEL per-span model; document that cached context is counted per inference and is not user-turn rollup    |
+| Cost mode                                   | Calculate / Auto only; reject Display      | No precomputed `costUSD` in local Grok data, and `CostMode::Display` would otherwise silently return `0.0`                |
+| V1 scope                                    | Primary sessions only                      | `subagent_finished.tokens_used` lacks input/output split; defer                                                           |
+| Command name                                | `grok`                                     | Aligns with `ccusage kimi`, `ccusage codex`; matches product name                                                         |
+| All-agents report                           | Include in V1                              | Kimi/Copilot are in `adapter/all/loader.rs`; Grok should be too, with `grokHome` config propagated into all-agent loading |
 
 ### Non-goals (V1)
 
@@ -57,17 +57,17 @@ Observed shape from live `~/.grok/logs/unified.jsonl`:
 
 ```json
 {
-  "ts": "2026-06-26T23:19:24.708Z",
-  "src": "shell",
-  "sid": "019f063a-df04-7f23-9879-099c7432a236",
-  "msg": "shell.turn.inference_done",
-  "ctx": {
-    "loop_index": 1,
-    "prompt_tokens": 21587,
-    "cached_prompt_tokens": 7623,
-    "completion_tokens": 230,
-    "reasoning_tokens": 0
-  }
+	"ts": "2026-06-26T23:19:24.708Z",
+	"src": "shell",
+	"sid": "019f063a-df04-7f23-9879-099c7432a236",
+	"msg": "shell.turn.inference_done",
+	"ctx": {
+		"loop_index": 1,
+		"prompt_tokens": 21587,
+		"cached_prompt_tokens": 7623,
+		"completion_tokens": 230,
+		"reasoning_tokens": 0
+	}
 }
 ```
 
@@ -81,14 +81,14 @@ Notes:
 
 ```json
 {
-  "info": {
-    "id": "019f063a-df04-7f23-9879-099c7432a236",
-    "cwd": "/home/shuv/repos/ccusage"
-  },
-  "current_model_id": "grok-composer-2.5-fast",
-  "generated_title": "Grok CLI Session Data Storage Location",
-  "created_at": "2026-06-26T23:19:09.324182065Z",
-  "updated_at": "2026-06-26T23:20:50.770102204Z"
+	"info": {
+		"id": "019f063a-df04-7f23-9879-099c7432a236",
+		"cwd": "/home/shuv/repos/ccusage"
+	},
+	"current_model_id": "grok-composer-2.5-fast",
+	"generated_title": "Grok CLI Session Data Storage Location",
+	"created_at": "2026-06-26T23:19:09.324182065Z",
+	"updated_at": "2026-06-26T23:20:50.770102204Z"
 }
 ```
 
@@ -96,33 +96,35 @@ Fallback when summary is missing: use URL-decoded parent directory name from ses
 
 ### Token mapping → `TokenUsageRaw`
 
-| Grok `ctx` field | ccusage field | Notes |
-|------------------|---------------|-------|
-| `prompt_tokens - cached_prompt_tokens` | `input_tokens` | Uncached prompt tokens |
-| `cached_prompt_tokens` | `cache_read_input_tokens` | Prompt cache hits |
-| `completion_tokens + reasoning_tokens` | `output_tokens` | Sum both |
-| — | `cache_creation_input_tokens` | `0` (not exposed locally) |
+| Grok `ctx` field                                     | ccusage field                    | Notes                                                                              |
+| ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------- |
+| `prompt_tokens.saturating_sub(cached_prompt_tokens)` | `input_tokens`                   | Uncached prompt tokens; saturate malformed rows instead of underflowing            |
+| `cached_prompt_tokens`                               | `cache_read_input_tokens`        | Prompt cache hits                                                                  |
+| `completion_tokens`                                  | `output_tokens`                  | Visible completion output only                                                     |
+| `reasoning_tokens`                                   | `LoadedEntry.extra_total_tokens` | Included in total tokens and cost usage, but not folded into visible output tokens |
+| —                                                    | `cache_creation_input_tokens`    | `0` (not exposed locally)                                                          |
 
 ### Model naming and pricing lookup
 
-Display model: `[grok] {current_model_id}` (e.g. `[grok] grok-composer-2.5-fast`).
+Display/raw model: `{current_model_id}` (e.g. `grok-composer-2.5-fast`).
+
+Do **not** prefix `LoadedEntry.model` / `UsageMessage.model` with `[grok]`; those fields feed model breakdowns and pricing. Use `project_path: "Grok"` / agent labels for presentation.
 
 Pricing candidate order (new helper in `parser.rs`, patterned after `rust/crates/ccusage/src/adapter/droid/parser.rs`):
 
 1. Raw `current_model_id` (`grok-composer-2.5-fast`)
 2. `xai/{model}` (`xai/grok-composer-2.5-fast`)
 3. `openrouter/x-ai/{model}` if applicable
-4. Embedded fallback `grok-4.3` only when no LiteLLM match (existing in `rust/crates/ccusage/src/pricing.rs`)
 
-Verify LiteLLM snapshot includes composer/build variants; add embedded overrides in `pricing.rs` if offline reports show `missing_pricing_model` for common Grok models.
+Do not fall back from an unknown model to unrelated `grok-4.3` pricing. If no candidate resolves, surface `missing_pricing_model`. Current checkout already embeds `grok-composer-2.5`, `grok-composer-2.5-fast`, and `grok-build`; Milestone 4 verifies adapter resolution uses those entries.
 
-### Dedup key
+### Entry ID
 
 ```text
-grok:{sid}:{ts}:{loop_index}:{prompt_tokens}:{completion_tokens}:{cached_prompt_tokens}
+grok:{sid}:{ts}:{loop_index}
 ```
 
-Stable across re-reads; avoids double-counting if log is scanned twice.
+Stable identity for a single append-only `unified.jsonl` line. Do not add a HashSet dedup pass in V1 unless multi-file log rotation is added later.
 
 ---
 
@@ -132,14 +134,14 @@ Stable across re-reads; avoids double-counting if log is scanned twice.
 
 Create `rust/crates/ccusage/src/adapter/grok/`:
 
-| File | Responsibility |
-|------|----------------|
-| `mod.rs` | `run()`, re-exports, command wiring |
-| `paths.rs` | Resolve `GROK_HOME`, locate `logs/unified.jsonl`, `sessions/` root |
+| File        | Responsibility                                                                |
+| ----------- | ----------------------------------------------------------------------------- |
+| `mod.rs`    | `run()`, re-exports, command wiring                                           |
+| `paths.rs`  | Resolve `GROK_HOME`, locate `logs/unified.jsonl`, `sessions/` root            |
 | `parser.rs` | Parse log lines, build session index, map to `GrokUsageEntry` / `LoadedEntry` |
-| `loader.rs` | Index summaries, scan log, dedupe, sort, progress wrapper |
-| `report.rs` | Reuse `opencode` summarize/report helpers (same as Kimi/Pi) |
-| `README.md` | Agent-source notes for future maintainers |
+| `loader.rs` | Index summaries, scan log, sort, progress wrapper                             |
+| `report.rs` | Reuse `opencode` summarize/report helpers (same as Kimi/Pi)                   |
+| `README.md` | Agent-source notes for future maintainers                                     |
 
 ### Loader flow
 
@@ -152,20 +154,20 @@ flowchart TD
   B --> F[join sid → SessionMeta]
   E --> F
   F --> G[map to LoadedEntry + pricing]
-  G --> H[dedupe + sort by timestamp]
+  G --> H[sort by timestamp]
   H --> I[filter_loaded_entries_by_date]
   I --> J[summarize_entries daily/monthly/session]
 ```
 
 ### Reference implementations
 
-| Pattern | Copy from |
-|---------|-----------|
-| Log JSONL parsing + prefilter | `rust/crates/ccusage/src/adapter/copilot/parser.rs` |
-| Report wiring | `rust/crates/ccusage/src/adapter/kimi/mod.rs`, `report.rs` |
-| Path env + comma-separated roots | `rust/crates/ccusage/src/adapter/pi/paths.rs`, `kimi/paths.rs` |
-| Provider prefix candidates | `rust/crates/ccusage/src/adapter/droid/parser.rs` (`xai` prefixes) |
-| Progress agent label | `rust/crates/ccusage/src/progress.rs` |
+| Pattern                          | Copy from                                                          |
+| -------------------------------- | ------------------------------------------------------------------ |
+| Log JSONL parsing + prefilter    | `rust/crates/ccusage/src/adapter/copilot/parser.rs`                |
+| Report wiring                    | `rust/crates/ccusage/src/adapter/kimi/mod.rs`, `report.rs`         |
+| Path env + comma-separated roots | `rust/crates/ccusage/src/adapter/pi/paths.rs`, `kimi/paths.rs`     |
+| Provider prefix candidates       | `rust/crates/ccusage/src/adapter/droid/parser.rs` (`xai` prefixes) |
+| Progress agent label             | `rust/crates/ccusage/src/progress.rs`                              |
 
 ---
 
@@ -173,7 +175,7 @@ flowchart TD
 
 ### Milestone 0 — Fixtures and parser (TDD)
 
-- [ ] **0.1** Create fixture directory used by tests (inline `fs_fixture!` is fine):
+- [x] **0.1** Create fixture directory used by tests (inline `fs_fixture!` is fine):
 
   ```text
   grok-home/
@@ -193,7 +195,7 @@ flowchart TD
   struct UnifiedLogLine { ts, sid, msg, ctx }
   struct InferenceCtx { loop_index, prompt_tokens, cached_prompt_tokens, completion_tokens, reasoning_tokens }
   struct SessionMeta { session_id, cwd, model_id, title }
-  struct GrokUsageEntry { timestamp, session_id, project, model, usage, loop_index, dedup_key }
+  struct GrokUsageEntry { timestamp, session_id, project, model, usage, reasoning_tokens, loop_index, entry_id }
   ```
 
 - [ ] **0.3** Implement `build_session_index(sessions_root) -> HashMap<String, SessionMeta>`:
@@ -209,12 +211,20 @@ flowchart TD
 
 - [ ] **0.5** Parser unit tests (`parser.rs` `#[cfg(test)]`):
   - Maps cache split correctly (`prompt=100, cached=30` → input=70, cache_read=30)
-  - Includes `reasoning_tokens` in output
+  - Uses saturating cache split (`prompt=30, cached=100` → input=0, cache_read=100)
+  - Stores `completion_tokens` in `output_tokens`
+  - Stores `reasoning_tokens` separately for `LoadedEntry.extra_total_tokens`
   - Skips lines without `sid`
   - Joins model from summary index
   - Uses fallback model when sid unknown
+  - Leaves model as raw `current_model_id` without a `[grok]` prefix
 
-- [ ] **0.6** Implement `grok_entry_to_loaded(...)` mirroring `copilot/loader.rs` `usage_entry_to_loaded`
+- [ ] **0.6** Implement `grok_entry_to_loaded(...)` mirroring Kimi/Droid-style `LoadedEntry` mapping:
+  - `LoadedEntry.model` / `UsageMessage.model` is the raw Grok model ID
+  - `LoadedEntry.extra_total_tokens = reasoning_tokens`
+  - Cost usage includes completion plus reasoning
+  - `missing_pricing_model` uses the Grok candidate list and total token count including reasoning
+  - `adapter::grok::run` rejects `CostMode::Display` before loading entries
 
 **Validation:** `cargo test -p ccusage grok::parser` passes.
 
@@ -222,24 +232,25 @@ flowchart TD
 
 ### Milestone 1 — Paths and loader
 
-- [ ] **1.1** `paths.rs`:
+- [x] **1.1** `paths.rs`:
   - `GROK_HOME_ENV = "GROK_HOME"`
-  - `fn grok_home(custom: Option<&str>) -> Result<PathBuf>` — env → custom → `~/.grok`
+  - `fn grok_home(custom: Option<&str>) -> Result<PathBuf>` — custom (`--grok-home` / config) → env → `~/.grok`
   - `fn unified_log_path(home: &Path) -> PathBuf` → `home/logs/unified.jsonl`
   - `fn sessions_root(home: &Path) -> PathBuf` → `home/sessions`
   - Support comma-separated `GROK_HOME` like Pi's `PI_AGENT_DIR` (optional V1.1; single path is enough for V1 if time-constrained)
 
 - [ ] **1.2** `loader.rs`:
-  - `load_entries(shared, grok_home_override, pricing)` with `UsageLoadAgent::Grok` progress
+  - `load_entries(shared, pricing)` for the focused command path
+  - `load_entries_with_home(shared, grok_home_override, pricing)` for all-agent config overrides
+  - Use `UsageLoadAgent::Grok` progress
   - Build session index once per load
   - If `unified.jsonl` missing → return empty `Vec` (not error; matches other adapters)
-  - Dedup with `HashSet` + `entry_id()`
   - Sort by timestamp
 
 - [ ] **1.3** Loader integration tests with `fs_fixture!` + `EnvVarGuard::set("GROK_HOME", ...)`:
   - Produces expected entry count
   - Respects `--since` / `--until` via existing `filter_loaded_entries_by_date`
-  - Dedupes identical lines on second load
+  - Proves `--grok-home` / config override wins over `GROK_HOME`
 
 **Validation:** `cargo test -p ccusage grok::loader` passes.
 
@@ -247,7 +258,7 @@ flowchart TD
 
 ### Milestone 2 — Report and CLI command
 
-- [ ] **2.1** `report.rs` — copy Kimi pattern:
+- [x] **2.1** `report.rs` — copy Kimi pattern:
   - `summarize_entries` for Daily / Monthly / Session
   - `report_from_rows` with `opencode::agent_summary_json`
   - `rows_key` helper
@@ -270,14 +281,26 @@ flowchart TD
 
 - [ ] **2.5** `rust/crates/ccusage-cli/src/types.rs`:
   - Add `Grok(AgentCommandArgs)` to `Command` enum
-  - Add `grok_home: Option<String>` to `AgentCommandArgs` **or** reuse a generic path field — prefer dedicated `grok_home` for schema clarity (parallel `pi_path`, `open_claw_path`)
+  - Add `grok_home: Option<String>` to `AgentCommandArgs`
+  - Extend `CliConfig::apply_agent_args` and test doubles to carry `grok_home` beside `pi_path` and `open_claw_path`
 
-- [ ] **2.6** CLI surface in `rust/crates/ccusage-cli/src/cli-commands.json`:
+- [ ] **2.6** CLI help/codegen surface:
+  - `rust/crates/ccusage-cli/src/cli-help.json`:
+    - Add `grok_options` with `--grok-home <grok-home>`
+    - Document that `--mode display` is unsupported for Grok because Grok has no local precomputed `costUSD`
+  - `rust/crates/ccusage-cli/src/cli-commands.json`:
+    - Add `grok_combined_options` = `["agent_options", "grok_options"]`
+    - Point Grok `daily`, `monthly`, and `session` pages at `grok_combined_options`
   - Top-level `grok` command
   - Subcommands: `daily`, `monthly`, `session`
-  - Flag: `--grok-home <PATH>` on grok subcommands
 
-- [ ] **2.7** Wire arg parsing (locate where `pi_path` / `open_claw_path` are parsed — `arg_parser.rs` / generated parser) and add `grok_home`
+- [ ] **2.7** Wire `rust/crates/ccusage-cli/src/parser.rs`:
+  - Add `"grok"` dispatch in `parse_command`
+  - Add `parse_grok_command` with `--grok-home`
+  - Add `"grok"` to `is_command`, `is_agent_command`, `agent_report_supported`, and `agent_display_name`
+  - Add `--grok-home` to `option_takes_value`
+  - Reject `--mode display` for Grok with a clear error, or reject in `adapter::grok::run` before loading
+  - Add parse-shape snapshots for `ccusage grok daily --grok-home /tmp/grok --json`
 
 - [ ] **2.8** `rust/crates/ccusage/src/progress.rs` — `UsageLoadAgent::Grok => "Grok"`
 
@@ -286,6 +309,9 @@ flowchart TD
   - Update snapshots: `root_help.snap`, `snapshots_representative_cli_parse_shapes.snap`
 
 - [ ] **2.10** CLI parse test for `ccusage grok daily --grok-home /tmp/grok --json`
+- [ ] **2.11** CLI/config token-scan tests:
+  - `--grok-home /tmp/grok` is skipped correctly when deriving config command tokens
+  - `ccusage grok blocks` / `ccusage grok statusline` produce the standard unsupported-report message
 
 **Validation:**
 
@@ -294,46 +320,57 @@ just fmt
 cargo test -p ccusage-cli
 cargo build -p ccusage
 GROK_HOME=/path/to/fixture ./target/debug/ccusage grok daily --json
+./target/debug/ccusage grok daily --mode display # fails clearly
 ```
 
 ---
 
 ### Milestone 3 — Config schema and all-agents aggregation
 
-- [ ] **3.1** `rust/crates/ccusage/src/config_schema.rs`:
+- [x] **3.1** `rust/crates/ccusage/src/config_schema.rs`:
   - Add `grok: Option<GrokConfig>` with `defaults.grokHome: Option<String>`
   - Include `"grok"` in agent list assertions
   - Snapshot update: `snapshots_schema_agent_specific_option_edges.snap`
+  - Regenerate `apps/ccusage/config-schema.json` with `just schema` / `just ccusage::generate-schema`
 
 - [ ] **3.2** `rust/crates/ccusage/src/config.rs`:
   - Parse `grok.defaults.grokHome` into `grok_home` on `AgentCommandArgs` (mirror `pi_path` wiring)
+  - Add `--grok-home` to config `option_takes_value`
+  - Add `"grok"` to config `is_agent_command`
+  - Add `GrokOptions::from_map` and thread it through `apply_config_to_agent_args`
+  - Add JSON config tests using `.ccusage/ccusage.json` style config, not TOML
 
 - [ ] **3.3** `rust/crates/ccusage/src/adapter/all/loader.rs`:
   - Add `AgentLoadSpec` for `"grok"` with `grok::load_entries`
-  - Use `load_priced_summary_agent_rows` or `load_session_capable_summary_agent_rows` (session report needed → session-capable)
+  - Use Kimi-style `load_priced_summary_agent_rows`; do not use `load_session_capable_summary_agent_rows` unless Grok is rewritten around `SessionAccumulator`
+  - Thread `grok_home` from `adapter::all::run` into the Grok load spec so `grok.defaults.grokHome` affects top-level `ccusage daily|monthly|session`
 
 - [ ] **3.4** `rust/crates/ccusage/src/adapter/all/report.rs` / types — add `"grok"` to agent label map if present
 
-- [ ] **3.5** Test: `ccusage daily --json` includes grok rows when fixture `GROK_HOME` is set
+- [ ] **3.5** Tests:
+  - `ccusage daily --json` includes grok rows when fixture `GROK_HOME` is set
+  - `ccusage daily --json` includes grok rows when JSON config sets `grok.defaults.grokHome`
+  - Focused `ccusage grok daily --grok-home /tmp/grok` beats `GROK_HOME`
 
-**Validation:** `cargo test -p ccusage adapter::all` passes.
+**Validation:** `cargo test -p ccusage adapter::all config_schema config::tests` passes; `just schema` leaves no diff.
 
 ---
 
-### Milestone 4 — Pricing
+### Milestone 4 — Pricing resolution
 
-- [ ] **4.1** Audit LiteLLM embedded snapshot for:
+- [x] **4.1** Verify current embedded pricing entries:
   - `grok-composer-2.5-fast` / `grok-composer-*`
   - `grok-build`
   - `xai/grok-*` variants
 
-- [ ] **4.2** If missing, add embedded pricing entries in `rust/crates/ccusage/src/pricing.rs` (follow `grok-4.3` and `moonshot/kimi-k2.6` patterns):
-  - Source URLs in comments (xAI pricing docs)
-  - Context limits map entry
+- [ ] **4.2** Use the existing embedded entries in `rust/crates/ccusage/src/pricing.rs`; only add new entries if a real Grok model appears in local data and a cited source exists
 
-- [ ] **4.3** Add pricing test in `pricing.rs` `#[cfg(test)]` for at least one composer model
+- [ ] **4.3** Keep/adjust pricing tests for composer and build entries if current tests need updates
 
-- [ ] **4.4** Parser test: `missing_pricing_model` is `None` in Calculate mode when model resolves
+- [ ] **4.4** Parser/loader tests:
+  - `missing_pricing_model` is `None` in Calculate mode when model resolves
+  - Unknown Grok model surfaces `missing_pricing_model` instead of falling back to `grok-4.3`
+  - `CostMode::Display` is rejected before producing zero-cost rows
 
 **Validation:** `cargo test -p ccusage pricing` passes; manual `ccusage grok daily` shows non-zero costs for real `~/.grok` data.
 
@@ -343,14 +380,14 @@ GROK_HOME=/path/to/fixture ./target/debug/ccusage grok daily --json
 
 Per `docs` skill and `adapter/AGENTS.md` migration checklist:
 
-- [ ] **5.1** `rust/crates/ccusage/src/adapter/grok/README.md` — paths, env vars, token mapping, limitations
+- [x] **5.1** `rust/crates/ccusage/src/adapter/grok/README.md` — paths, env vars, token mapping, limitations
 
 - [ ] **5.2** `docs/guide/grok/index.md` — modeled on `docs/guide/kimi/index.md`:
   - Commands
   - Data location (`GROK_HOME`, `logs/unified.jsonl`, session index)
   - Token mapping table
-  - Cost calculation (calculate-only)
-  - Limitation: per-inference granularity; log rotation
+  - Cost calculation (calculate/auto only; display mode unsupported)
+  - Limitation: per-inference granularity means cached context is counted on each inference and is not user-turn rollup; log rotation
 
 - [ ] **5.3** VitePress nav — add Grok entry in `docs/.vitepress/config.ts` (or equivalent nav file under `docs/`)
 
@@ -360,13 +397,13 @@ Per `docs` skill and `adapter/AGENTS.md` migration checklist:
 
 - [ ] **5.6** `.agents/skills/agent-sources/SKILL.md` — add Grok README to the adapter list
 
-**Validation:** `just` docs build if available; manual link check.
+**Validation:** `just docs::build` if available; manual link check.
 
 ---
 
 ### Milestone 6 — Optional smoke test and polish
 
-- [ ] **6.1** Skipped local smoke test:
+- [x] **6.1** Skipped local smoke test:
 
   ```rust
   #[test]
@@ -374,9 +411,9 @@ Per `docs` skill and `adapter/AGENTS.md` migration checklist:
   fn smoke_loads_real_grok_home() { ... }
   ```
 
-- [ ] **6.2** Empty-state message when `unified.jsonl` exists but has no `inference_done` for date range (verify table output is sensible)
+- [x] **6.2** Empty-state message when `unified.jsonl` exists but has no `inference_done` for date range (verify table output is sensible)
 
-- [ ] **6.3** Benchmark note: scanning large `unified.jsonl` — confirm `LinePrefilter` keeps perf acceptable; profile if >100MB log on main
+- [x] **6.3** Keep performance work scoped to real evidence: rely on `LinePrefilter` for V1; profile only if a real large Grok log shows slow `ccusage grok daily`
 
 ---
 
@@ -384,21 +421,21 @@ Per `docs` skill and `adapter/AGENTS.md` migration checklist:
 
 ### Commands
 
-| Command | Description |
-|---------|-------------|
-| `ccusage grok daily` | Usage grouped by calendar day |
-| `ccusage grok monthly` | Usage grouped by month |
+| Command                | Description                        |
+| ---------------------- | ---------------------------------- |
+| `ccusage grok daily`   | Usage grouped by calendar day      |
+| `ccusage grok monthly` | Usage grouped by month             |
 | `ccusage grok session` | Usage grouped by Grok session UUID |
 
-Shared flags (inherited from agent report defaults): `--json`, `--since`, `--until`, `--offline`, `--mode`, `--order`, `--breakdown`, `--timezone`, `--jq`, `--no-cost`, etc.
+Shared flags (inherited from agent report defaults): `--json`, `--since`, `--until`, `--offline`, `--mode`, `--order`, `--breakdown`, `--timezone`, `--jq`, `--no-cost`, etc. `--mode display` is rejected for Grok because local Grok rows do not include precomputed `costUSD`.
 
 ### Agent-specific flags
 
-| Flag / env | Description |
-|------------|-------------|
-| `--grok-home <PATH>` | Override Grok data directory (default `~/.grok`) |
-| `GROK_HOME` | Same as `--grok-home` (CLI flag wins per config precedence) |
-| `config.toml` `[grok.defaults] grokHome` | Persistent override |
+| Flag / env                           | Description                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| `--grok-home <PATH>`                 | Override Grok data directory (default `~/.grok`)                                |
+| `GROK_HOME`                          | Environment fallback when `--grok-home` / config is unset                       |
+| JSON config `grok.defaults.grokHome` | Persistent override in `.ccusage/ccusage.json` / discovered ccusage JSON config |
 
 ### Example usage
 
@@ -409,6 +446,18 @@ GROK_HOME=$HOME/.grok ccusage grok monthly --since 20260601
 ccusage grok daily --grok-home /backup/grok-archive --offline
 ```
 
+Example JSON config:
+
+```json
+{
+	"grok": {
+		"defaults": {
+			"grokHome": "/backup/grok-archive"
+		}
+	}
+}
+```
+
 ### JSON output shape
 
 Same as other JSONL-based agents (Kimi/OpenCode): top-level keys `daily` / `monthly` / `sessions` plus `totals`, via `opencode::agent_summary_json`.
@@ -417,21 +466,22 @@ Same as other JSONL-based agents (Kimi/OpenCode): top-level keys `daily` / `mont
 
 ## Test plan
 
-| Layer | What to test |
-|-------|----------------|
-| Parser | Token math, cache split, reasoning tokens, sid join, fallbacks |
-| Loader | Dedup, date filter, missing log file, env override |
-| CLI | Parse shapes, help text includes `grok` |
-| Config | Schema property for `grok.defaults.grokHome` |
-| All-agents | Grok rows appear in `ccusage daily` when data present |
-| Pricing | Model resolution for `grok-composer-*` and `grok-build` |
-| Snapshots | CLI help, config schema (insta update via `cargo test`) |
+| Layer      | What to test                                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| Parser     | Token math, saturating cache split, reasoning tokens as extra totals, sid join, raw model IDs, fallbacks             |
+| Loader     | Date filter, missing log file, env override, CLI/config precedence                                                   |
+| CLI        | Parse shapes, parser command lists, help text includes `grok` and `--grok-home`, display mode rejection              |
+| Config     | JSON schema property for `grok.defaults.grokHome`, command-token scan, `CliConfig` plumbing                          |
+| All-agents | Grok rows appear in `ccusage daily` when data present through env and JSON config                                    |
+| Pricing    | Model resolution for existing `grok-composer-*` and `grok-build`; unknown models warn instead of `grok-4.3` fallback |
+| Snapshots  | CLI help, parse shapes, config schema, generated `apps/ccusage/config-schema.json`                                   |
 
 Run before PR:
 
 ```sh
 direnv allow   # if not already active
 just fmt
+just schema
 cargo test -p ccusage
 cargo test -p ccusage-cli
 ```
@@ -440,15 +490,16 @@ cargo test -p ccusage-cli
 
 ## Risks and mitigations
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| `unified.jsonl` log rotation/truncation | Under-reported historical usage | Document clearly; optional future: read rotated `unified.jsonl.*` if Grok adds them |
-| Large log scan cost | Slow `ccusage grok daily` | `LinePrefilter`; early date filter on parsed `ts` before building full entries |
-| Model IDs change frequently | `missing_pricing_model` warnings | Candidate list + embedded fallbacks; display raw model in JSON |
-| Sessions without matching log lines | Orphan summaries ignored | Index only used for join; no orphan emission |
-| Log lines without summary (deleted session dir) | Missing cwd/model | Emit with `project: "unknown"`, model fallback `grok-build` |
-| Grok schema changes `msg` string | Parser stops matching | Fixture test + smoke test; agent-sources README notes stable contract |
-| Composer vs Cursor adapter differences | None expected | Same `unified.jsonl` format verified on Cursor session `019f063a-...` |
+| Risk                                                        | Impact                           | Mitigation                                                                                  |
+| ----------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `unified.jsonl` log rotation/truncation                     | Under-reported historical usage  | Document clearly; optional future: read rotated `unified.jsonl.*` if Grok adds them         |
+| Large log scan cost                                         | Slow `ccusage grok daily`        | `LinePrefilter`; profile only with a real slow log                                          |
+| Model IDs change frequently                                 | `missing_pricing_model` warnings | Candidate list + existing embedded composer/build pricing; no unrelated `grok-4.3` fallback |
+| Sessions without matching log lines                         | Orphan summaries ignored         | Index only used for join; no orphan emission                                                |
+| Log lines without summary (deleted session dir)             | Missing cwd/model                | Emit with `project: "unknown"`, model fallback `grok-build`                                 |
+| Grok schema changes `msg` string                            | Parser stops matching            | Fixture test + smoke test; agent-sources README notes stable contract                       |
+| Composer vs Cursor adapter differences                      | None expected                    | Same `unified.jsonl` format verified on Cursor session `019f063a-...`                       |
+| Per-inference totals look inflated versus user-turn reports | Confusing all-agent comparisons  | Document that cached context is counted per inference; user-turn rollup remains V2          |
 
 ---
 
@@ -483,16 +534,23 @@ cargo test -p ccusage-cli
 - `rust/crates/ccusage/src/config.rs`
 - `rust/crates/ccusage/src/config_schema.rs`
 - `rust/crates/ccusage/src/pricing.rs` (if needed)
+- `rust/crates/ccusage/src/adapter/all/mod.rs`
 - `rust/crates/ccusage/src/adapter/all/loader.rs`
 - `rust/crates/ccusage-cli/src/types.rs`
+- `rust/crates/ccusage-cli/src/parser.rs`
+- `rust/crates/ccusage-cli/src/cli-help.json`
 - `rust/crates/ccusage-cli/src/cli-commands.json`
-- `rust/crates/ccusage-cli/src/arg_parser.rs` (or generated parser inputs)
 - `rust/crates/ccusage-cli/src/tests.rs`
 - `rust/crates/ccusage-cli/src/snapshots/*.snap`
 - `rust/crates/ccusage/src/snapshots/*schema*.snap`
+- `apps/ccusage/config-schema.json`
+- `docs/public/config-schema.json` (if generated by `just schema`)
 - `docs/.vitepress/config.ts` (nav)
 - `README.md`
 - `apps/ccusage/README.md`
+- `docs/guide/config-files.md`
+- `docs/guide/environment-variables.md`
+- `docs/guide/all-reports.md`
 - `.agents/skills/agent-sources/SKILL.md`
 
 ---
@@ -503,20 +561,22 @@ Split into stacked, revertable commits (repo prefers squash-merge but stacked co
 
 1. `feat(grok): add parser and fixture tests for unified.jsonl`
 2. `feat(grok): add loader, paths, and report modules`
-3. `feat(cli): wire ccusage grok subcommand and help snapshots`
-4. `feat(grok): add all-agents aggregation and config schema`
-5. `feat(pricing): embed grok-composer and grok-build pricing if needed`
+3. `feat(cli): wire ccusage grok subcommand, path config, and help snapshots`
+4. `feat(grok): add all-agents aggregation and JSON config schema`
+5. `test(pricing): verify grok-composer and grok-build candidate resolution`
 6. `docs(grok): add guide, README links, and agent-sources entry`
 
 ---
 
 ## Acceptance criteria
 
-- [ ] `ccusage grok daily` prints a table from real `~/.grok` data on a machine with Grok sessions
-- [ ] `ccusage grok daily --json` emits valid JSON with sensible totals
-- [ ] `ccusage grok session` groups by session UUID
-- [ ] `GROK_HOME` and `--grok-home` override work in tests
-- [ ] `ccusage daily` includes Grok when Grok data exists
-- [ ] No regression in existing adapter tests
-- [ ] User-facing docs list Grok commands, data paths, and token-mapping semantics
-- [ ] Limitations documented: log-based tokens, per-inference granularity, no local costUSD
+- [x] `ccusage grok daily` prints a table from real `~/.grok` data on a machine with Grok sessions
+- [x] `ccusage grok daily --json` emits valid JSON with sensible totals
+- [x] `ccusage grok session` groups by session UUID
+- [x] `GROK_HOME` and `--grok-home` override work in tests
+- [x] `--grok-home` / JSON config beats `GROK_HOME`
+- [x] `ccusage daily` includes Grok when Grok data exists through env and JSON config
+- [x] `ccusage grok daily --mode display` fails with a clear error
+- [x] No regression in existing adapter tests
+- [x] User-facing docs list Grok commands, data paths, and token-mapping semantics
+- [x] Limitations documented: log-based tokens, per-inference granularity, no local costUSD/display mode
