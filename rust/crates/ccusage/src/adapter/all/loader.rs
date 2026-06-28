@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 use crate::{
     CodexGroup, LoadedEntry, ModelBreakdown, PricingMap, Result, SessionAccumulator, UsageSummary,
     adapter::{
-        amp, claude, codebuff, codex, copilot, droid, gemini, goose, hermes, kilo, kimi, openclaw,
-        opencode, pi, qwen,
+        amp, claude, codebuff, codex, copilot, droid, gemini, goose, grok, hermes, kilo, kimi,
+        openclaw, opencode, pi, qwen,
     },
     cli::{AgentReportKind, CodexSpeed, SharedArgs, WeekDay},
     filter_loaded_entries_by_date, json_float,
@@ -17,7 +17,11 @@ use super::{
     types::{AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllRow, LoadedAgentRows},
 };
 
-pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AllLoadResult> {
+pub(super) fn load_rows(
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    grok_home: Option<&str>,
+) -> Result<AllLoadResult> {
     let mut progress = crate::progress::UsageLoadProgress::new(
         crate::log_level() != Some(0)
             && crate::progress::should_show_usage_load_progress(
@@ -40,6 +44,7 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
         json: true,
         ..shared.clone()
     };
+    let grok_home = grok_home.map(str::to_string);
     let loaded = load_agent_rows_parallel(
         vec![
             AgentLoadSpec {
@@ -237,6 +242,23 @@ pub(super) fn load_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<Al
                 agent: "qwen",
                 progress_agent: crate::progress::UsageLoadAgent::Qwen,
                 load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
+            },
+            AgentLoadSpec {
+                index: 15,
+                agent: "grok",
+                progress_agent: crate::progress::UsageLoadAgent::Grok,
+                load: Box::new(|| {
+                    load_priced_summary_agent_rows(
+                        "grok",
+                        load_kind,
+                        &loader_shared,
+                        &pricing,
+                        |shared, pricing| {
+                            grok::load_entries_with_home(shared, grok_home.as_deref(), pricing)
+                        },
+                        grok::summarize_entries,
+                    )
+                }),
             },
         ],
         &mut progress,

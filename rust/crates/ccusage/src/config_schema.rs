@@ -46,6 +46,8 @@ pub(crate) struct CcusageConfig {
     pub(crate) gemini: Option<GeminiConfig>,
     /// Kimi configuration.
     pub(crate) kimi: Option<KimiConfig>,
+    /// Grok configuration.
+    pub(crate) grok: Option<GrokConfig>,
     /// Qwen configuration.
     pub(crate) qwen: Option<QwenConfig>,
 }
@@ -273,6 +275,30 @@ pub(crate) struct KimiCommandsConfig {
     pub(crate) daily: Option<SharedOptions>,
     pub(crate) monthly: Option<SharedOptions>,
     pub(crate) session: Option<SharedOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokConfig {
+    pub(crate) defaults: Option<GrokOptions>,
+    pub(crate) commands: Option<GrokCommandsConfig>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokCommandsConfig {
+    pub(crate) daily: Option<GrokOptions>,
+    pub(crate) monthly: Option<GrokOptions>,
+    pub(crate) session: Option<GrokOptions>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GrokOptions {
+    #[serde(flatten)]
+    pub(crate) shared: SharedOptions,
+    /// Path to the Grok data directory (default: ~/.grok).
+    pub(crate) grok_home: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -634,6 +660,15 @@ impl OpenClawOptions {
         Self {
             shared: SharedOptions::from_map(map),
             open_claw_path: string_option(map, "openClawPath"),
+        }
+    }
+}
+
+impl GrokOptions {
+    pub(crate) fn from_map(map: &Map<String, Value>) -> Self {
+        Self {
+            shared: SharedOptions::from_map(map),
+            grok_home: string_option(map, "grokHome"),
         }
     }
 }
@@ -1052,6 +1087,11 @@ mod tests {
             &["openclaw", "defaults"],
             &with_keys(&shared, &["openClawPath"]),
         );
+        assert_schema_properties(
+            &schema,
+            &["grok", "defaults"],
+            &with_keys(&shared, &["grokHome"]),
+        );
     }
 
     #[test]
@@ -1066,10 +1106,12 @@ mod tests {
         assert!(schema_property(&schema, &["pi", "defaults", "piPath"]).is_some());
         assert!(schema_property(&schema, &["goose", "defaults", "piPath"]).is_none());
         assert!(schema_property(&schema, &["openclaw", "defaults", "openClawPath"]).is_some());
+        assert!(schema_property(&schema, &["grok", "defaults", "grokHome"]).is_some());
         assert!(schema_property(&schema, &["kilo", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["gemini", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["kimi", "defaults", "openClawPath"]).is_none());
         assert!(schema_property(&schema, &["qwen", "defaults", "openClawPath"]).is_none());
+        assert!(schema_property(&schema, &["kimi", "defaults", "grokHome"]).is_none());
     }
 
     #[test]
@@ -1103,8 +1145,8 @@ mod tests {
             "ccusage-config",
             &[
                 "$schema", "amp", "claude", "codebuff", "codex", "commands", "copilot", "defaults",
-                "gemini", "goose", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi", "qwen",
-                "droid",
+                "gemini", "goose", "grok", "hermes", "kilo", "kimi", "opencode", "openclaw", "pi",
+                "qwen", "droid",
             ],
         );
         assert!(
@@ -1359,6 +1401,7 @@ mod tests {
             "opencodeWeekly": schema_node(&schema, &["opencode", "commands", "weekly"]),
             "piDefaults": schema_node(&schema, &["pi", "defaults"]),
             "openclawDefaults": schema_node(&schema, &["openclaw", "defaults"]),
+            "grokDefaults": schema_node(&schema, &["grok", "defaults"]),
         }));
     }
 

@@ -14,8 +14,8 @@ use crate::{
     config_schema::{
         BlocksSpecificOptions, CodexOptions, ConfigCodexSpeed, ConfigCostMode, ConfigCostSource,
         ConfigPricingOverride, ConfigSortOrder, ConfigVisualBurnRate, ConfigWeekDay,
-        DailySpecificOptions, OpenClawOptions, PiOptions, SharedOptions, StatuslineSpecificOptions,
-        WeeklySpecificOptions,
+        DailySpecificOptions, GrokOptions, OpenClawOptions, PiOptions, SharedOptions,
+        StatuslineSpecificOptions, WeeklySpecificOptions,
     },
 };
 
@@ -221,6 +221,8 @@ fn option_takes_value(arg: &str) -> bool {
             | "--project"
             | "--project-aliases"
             | "--pi-path"
+            | "--open-claw-path"
+            | "--grok-home"
             | "--speed"
             | "-B"
             | "--visual-burn-rate"
@@ -248,6 +250,7 @@ fn is_agent_command(command: &str) -> bool {
             | "copilot"
             | "gemini"
             | "kimi"
+            | "grok"
             | "openclaw"
     )
 }
@@ -358,6 +361,7 @@ pub(crate) fn apply_config_to_agent_args(
     codex_speed: &mut CodexSpeed,
     mut pi_path: Option<&mut Option<String>>,
     mut open_claw_path: Option<&mut Option<String>>,
+    mut grok_home: Option<&mut Option<String>>,
     config: &ConfigContext,
 ) {
     for options in config.option_maps() {
@@ -375,6 +379,32 @@ pub(crate) fn apply_config_to_agent_args(
         {
             *open_claw_path = Some(path);
         }
+        if let Some(grok_home) = grok_home.as_deref_mut()
+            && let Some(path) = GrokOptions::from_map(options).grok_home
+        {
+            *grok_home = Some(path);
+        }
+    }
+    if let Some(grok_home) = grok_home {
+        apply_grok_defaults_from_root(grok_home, config);
+    }
+}
+
+fn apply_grok_defaults_from_root(grok_home: &mut Option<String>, config: &ConfigContext) {
+    if grok_home.is_some() {
+        return;
+    }
+    let Some(root) = config.value.as_ref().and_then(Value::as_object) else {
+        return;
+    };
+    let Some(grok) = object_at(root, "grok") else {
+        return;
+    };
+    let Some(defaults) = object_at(grok, "defaults") else {
+        return;
+    };
+    if let Some(path) = GrokOptions::from_map(defaults).grok_home {
+        *grok_home = Some(path);
     }
 }
 
@@ -404,8 +434,9 @@ impl crate::cli::CliConfig for ConfigContext {
         codex_speed: &mut CodexSpeed,
         pi_path: Option<&mut Option<String>>,
         open_claw_path: Option<&mut Option<String>>,
+        grok_home: Option<&mut Option<String>>,
     ) {
-        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, self);
+        apply_config_to_agent_args(codex_speed, pi_path, open_claw_path, grok_home, self);
     }
 }
 
@@ -780,6 +811,7 @@ mod tests {
             &mut speed,
             None,
             None,
+            None,
             &context(
                 json!({
                     "codex": {
@@ -801,6 +833,7 @@ mod tests {
         apply_config_to_agent_args(
             &mut speed,
             Some(&mut pi_path),
+            None,
             None,
             &context(
                 json!({
@@ -824,6 +857,7 @@ mod tests {
             &mut speed,
             None,
             Some(&mut open_claw_path),
+            None,
             &context(
                 json!({
                     "openclaw": {
@@ -839,6 +873,52 @@ mod tests {
         );
 
         assert_eq!(open_claw_path.as_deref(), Some("/tmp/openclaw"));
+
+        let mut speed = CodexSpeed::Auto;
+        let mut grok_home = None;
+        apply_config_to_agent_args(
+            &mut speed,
+            None,
+            None,
+            Some(&mut grok_home),
+            &context(
+                json!({
+                    "grok": {
+                        "defaults": {
+                            "grokHome": "/tmp/grok-archive"
+                        }
+                    }
+                }),
+                "grok daily",
+                Some("grok"),
+                "daily",
+            ),
+        );
+
+        assert_eq!(grok_home.as_deref(), Some("/tmp/grok-archive"));
+
+        let mut speed = CodexSpeed::Auto;
+        let mut grok_home = None;
+        apply_config_to_agent_args(
+            &mut speed,
+            None,
+            None,
+            Some(&mut grok_home),
+            &context(
+                json!({
+                    "grok": {
+                        "defaults": {
+                            "grokHome": "/tmp/grok-all"
+                        }
+                    }
+                }),
+                "daily",
+                None,
+                "daily",
+            ),
+        );
+
+        assert_eq!(grok_home.as_deref(), Some("/tmp/grok-all"));
     }
 
     #[test]

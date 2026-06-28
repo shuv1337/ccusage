@@ -241,6 +241,12 @@
 			"description": "Path or comma-separated paths to OpenClaw data directories (default: ~/.openclaw, ~/.clawdbot, ~/.moltbot, ~/.moldbot)"
 		}
 	],
+	"grok_options": [
+		{
+			"flags": "--grok-home <grok-home>",
+			"description": "Path to Grok data directory (default: ~/.grok, or GROK_HOME). Grok reports do not support --mode display because local rows have no precomputed costUSD."
+		}
+	],
 	"session_options": [
 		{
 			"flags": "-i, --id <id>",

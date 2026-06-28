@@ -82,6 +82,7 @@ export default defineConfig({
 						{ text: 'GitHub Copilot CLI', link: '/guide/copilot/' },
 						{ text: 'Gemini CLI', link: '/guide/gemini/' },
 						{ text: 'Kimi', link: '/guide/kimi/' },
+						{ text: 'Grok', link: '/guide/grok/' },
 						{ text: 'OpenClaw', link: '/guide/openclaw/' },
 						{ text: 'Source Support Q&A', link: '/guide/source-support-qa' },
 					],

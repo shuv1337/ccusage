@@ -7,7 +7,7 @@ use crate::{Result, cli::AgentCommandArgs, print_json_or_jq, wants_json};
 pub(crate) fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
     let shared = args.shared;
-    let result = loader::load_rows(kind, &shared)?;
+    let result = loader::load_rows(kind, &shared, args.grok_home.as_deref())?;
     if wants_json(&shared) {
         return print_json_or_jq(
             report::report_json(&result.rows, kind),
