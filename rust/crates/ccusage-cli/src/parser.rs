@@ -69,7 +69,11 @@ impl Cli {
         }
 
         let command = match parser.next() {
-            None => None,
+            None => Some(Command::All(agent_command_args_from_config(
+                shared.clone(),
+                AgentReportKind::Daily,
+                config,
+            ))),
             Some(command) => Some(parse_command(
                 &command,
                 &mut parser,
@@ -275,9 +279,6 @@ fn parse_all_command(
     kind: AgentReportKind,
     config: &dyn CliConfig,
 ) -> Result<Command, String> {
-    let mut grok_home = None;
-    let mut codex_speed = CodexSpeed::Auto;
-    config.apply_agent_args(&mut codex_speed, None, None, Some(&mut grok_home));
     while parser.peek().is_some() {
         if matches!(parser.peek(), Some("--all")) {
             parser.next();
@@ -285,14 +286,9 @@ fn parse_all_command(
         }
         parse_shared_arg(parser, &mut shared)?;
     }
-    Ok(Command::All(AgentCommandArgs {
-        shared,
-        kind,
-        pi_path: None,
-        open_claw_path: None,
-        grok_home,
-        codex_speed,
-    }))
+    Ok(Command::All(agent_command_args_from_config(
+        shared, kind, config,
+    )))
 }
 
 fn parse_top_level_session_command(
@@ -319,18 +315,29 @@ fn parse_top_level_session_command(
         return Ok(Command::Session(args));
     }
 
+    Ok(Command::All(agent_command_args_from_config(
+        args.shared,
+        AgentReportKind::Session,
+        config,
+    )))
+}
+
+fn agent_command_args_from_config(
+    shared: SharedArgs,
+    kind: AgentReportKind,
+    config: &dyn CliConfig,
+) -> AgentCommandArgs {
     let mut grok_home = None;
     let mut codex_speed = CodexSpeed::Auto;
     config.apply_agent_args(&mut codex_speed, None, None, Some(&mut grok_home));
-
-    Ok(Command::All(AgentCommandArgs {
-        shared: args.shared,
-        kind: AgentReportKind::Session,
+    AgentCommandArgs {
+        shared,
+        kind,
         pi_path: None,
         open_claw_path: None,
         grok_home,
         codex_speed,
-    }))
+    }
 }
 
 fn parse_claude_daily_command(

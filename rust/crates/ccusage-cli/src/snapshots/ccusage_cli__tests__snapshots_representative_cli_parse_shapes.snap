@@ -6,7 +6,33 @@ expression: cases
   {
     "case": "default all-agent daily",
     "cli": {
-      "command": null,
+      "command": {
+        "codexSpeed": "Auto",
+        "grokHome": null,
+        "kind": "Daily",
+        "openClawPath": null,
+        "piPath": null,
+        "shared": {
+          "breakdown": false,
+          "color": false,
+          "compact": false,
+          "config": null,
+          "debug": false,
+          "debugSamples": 5,
+          "jq": null,
+          "json": false,
+          "mode": "Auto",
+          "noColor": false,
+          "noOffline": false,
+          "offline": false,
+          "order": "Asc",
+          "since": null,
+          "singleThread": false,
+          "timezone": null,
+          "until": null
+        },
+        "type": "all"
+      },
       "shared": {
         "breakdown": false,
         "color": false,
